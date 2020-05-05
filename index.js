@@ -6,13 +6,6 @@ const fs = require('fs')
 const _colors = require('colors');
 const program = require('commander')
 
-fs.readdir(`images`, (err) => {
-    if (err) {
-        console.error('다운로드 폴더를 현재 경로에 생성합니다.');
-        fs.mkdirSync(`images`);
-    }
-});
-
 var adapose = false;
 
 function subdomain_from_galleryid(g, number_of_frontends) {
@@ -78,7 +71,63 @@ function url_from_url_from_hash(galleryid, image, dir, ext, base) {
     return url_from_url(url_from_hash(galleryid, image, dir, ext), base);
 }
 
+function makeDir(id) {
+    "use strict"
+    const dir = `./images/${id}`;
+    
+    fs.readdir(`images`, (err) => {
+        if (err) {
+            console.error('다운로드 폴더를 현재 경로에 생성합니다.');
+            fs.mkdirSync(`images`);
+        }
+    });
+
+    fs.readdir(dir, err => {
+        if (err) {
+            fs.mkdirSync(dir);
+        }
+    });
+
+    return dir
+}
+
+async function getInfo(id) {
+    "use strict"
+    try {
+    const galleryinfo = await axios.get(`https://ltn.hitomi.la/galleries/${id}.js`)
+    .then(({data}) => data)        
+    .catch(err => {
+        if (err.response) {
+            if (err.response.status == 404) throw new Error("Not found")
+        }
+        if (err.request) throw new Error("VPN을 사용하세요") 
+    })
+        await (new Function(galleryinfo.replace("var galleryinfo", "json")))();
+        return json
+    } catch(e) {
+        console.error(e)
+    }
+};
+
+function checkFiles(files, dir) {
+    "use strict"
+    let nonexistent = [];
+
+    files.map(file => {
+        if (!fs.existsSync(`${dir}/${file["name"]}`)) {
+            nonexistent.push(file)
+        }
+    })
+
+    if (!nonexistent.length) {
+        console.log("already completely downloaded")
+        process.exit(0)
+    }
+    return nonexistent
+}
+
 function imageRequest(url, id) {
+    "use strict"
     return axios.get(url, {
         headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.132 Safari/537.36',
@@ -92,89 +141,69 @@ function imageRequest(url, id) {
             'TE': 'Trailers'
         },
         responseType: 'arraybuffer'
-    })
-    .catch(() => imageRequest(url, id)) //recursive function
+    }).catch(() => imageRequest(url, id)) //recursive function
 }
 
-async function download(id) {
-    try {
-        const dir = `./images/${id}`
+function imgDownload(nonexistent, files, id, dir) {
+    "use strict"
+    const bar = new cliProgress.Bar({
+        format: `${_colors.green('Downloading... {bar}')} | {percentage}% | ETA: {eta}s | {value}/{total} |`,
+        barCompleteChar: '\u2588',
+        barIncompleteChar: '\u2590',
+    })
 
-        fs.readdir(dir, err => {
-            if (err) {
-                fs.mkdirSync(dir);
-            }
-        });
+    bar.start(nonexistent.length, 0)
 
-        const galleryinfo = await axios.get(`https://ltn.hitomi.la/galleries/${id}.js`)
-            .then(({ data }) => data)
-            .catch(err => {
-                if (err.response) {
-                    if (err.response.status == 404) throw new Error("Not found")
+    const timeStart = new Date()
+
+    Promise.all(nonexistent.map(async file => {
+        try {
+            let url = await url_from_url_from_hash(id, file)
+            let res = await imageRequest(url, id)
+
+            fs.writeFile(`${dir}/${file["name"]}`, res.data, err => {
+                if (err) {
+                    console.error(err)
                 }
-                if (err.request) throw new Error("VPN을 사용하세요") //you should a use VPN
-            })
-
-        await (new Function(galleryinfo.replace("var galleryinfo", "json")))();
-
-        const { title, language, type, files } = json
-        const { length } = json.files
-        let nonexistent = []
-
-        files.map(file => {
-            if (!fs.existsSync(`${dir}/${file["name"]}`)) {
-                nonexistent.push(file)
-            }
-        })
-
-        if (!nonexistent.length) {
-            console.log("already completely downloaded")
-            process.exit(0)
-        }
-
-        console.log(`title : ${title}\ntype : ${type}\nlanguage : ${language}\nid : ${id}\nlength : ${length}`)
-
-        const bar = new cliProgress.Bar({
-            format: `${_colors.green('Downloading... {bar}')} | {percentage}% | ETA: {eta}s | {value}/{total} |`,
-            barCompleteChar: '\u2588',
-            barIncompleteChar: '\u2590',
-        })
-
-        bar.start(nonexistent.length, 0)
-
-        const timeStart = new Date()
-
-        await Promise.all(nonexistent.map(async file => {
-            try {
-                let url = await url_from_url_from_hash(id, file)
-                let res = await imageRequest(url, id)
-
-                fs.writeFile(`${dir}/${file["name"]}`, res.data, err => {
+                    fs.readdir(dir, (err, readFiles) => {
                     if (err) {
                         console.error(err)
                     }
-                        fs.readdir(dir, (err, readFiles) => {
-                        if (err) {
-                            console.error(err)
-                        }
 
-                        if (nonexistent.length == files.length) {
-                            bar.update(readFiles.length)
-                        } 
+                    if (nonexistent.length == files.length) {
+                        bar.update(readFiles.length)
+                    } 
 
-                        bar.update(readFiles.length - (files.length - nonexistent.length))
-                        
-                        if (files.length == readFiles.length) {
-                            const timeEnd = new Date()
-                            console.log(`\nDownload Complete\nelapsed time : ${((timeEnd - timeStart) / 1000).toFixed(2)}s`)
-                            process.exit(0)
-                        }
-                    });    
-                })
-            } catch(e) {
-                console.error(e)
-            }
-        }))
+                    bar.update(readFiles.length - (files.length - nonexistent.length))
+                    
+                    if (files.length == readFiles.length) {
+                        const timeEnd = new Date()
+                        console.log(`\nDownload Complete\nelapsed time : ${((timeEnd - timeStart) / 1000).toFixed(2)}s`)
+                        process.exit(0)
+                    }
+                });    
+            })
+        } catch(e) {
+            console.error(e)
+        }
+    }))
+}
+
+async function download(id) {
+    "use strict"
+    try {
+        const dir = makeDir(id)
+        const json = await getInfo(id);
+
+        const { title, language, type, files } = json;
+        const { length } = json.files;
+
+        console.log(`title : ${title}\ntype : ${type}\nlanguage : ${language}\nid : ${id}\nlength : ${length}`);
+
+        let nonexistent = checkFiles(files, dir);
+
+        return imgDownload(nonexistent, files, id, dir);
+
     } catch(e) {
         console.error(e)
     }
