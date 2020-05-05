@@ -156,7 +156,7 @@ function imgDownload(nonexistent, files, id, dir) {
 
     const timeStart = new Date()
 
-    Promise.all(nonexistent.map(async file => {
+    return Promise.all(nonexistent.map(async file => {
         try {
             let url = await url_from_url_from_hash(id, file)
             let res = await imageRequest(url, id)
@@ -177,7 +177,8 @@ function imgDownload(nonexistent, files, id, dir) {
                     bar.update(readFiles.length - (files.length - nonexistent.length))
                     
                     if (files.length == readFiles.length) {
-                        const timeEnd = new Date()
+                        bar.update(files.length);
+                        const timeEnd = new Date();
                         console.log(`\nDownload Complete\nelapsed time : ${((timeEnd - timeStart) / 1000).toFixed(2)}s`)
                         process.exit(0)
                     }
@@ -192,7 +193,7 @@ function imgDownload(nonexistent, files, id, dir) {
 async function download(id) {
     "use strict"
     try {
-        const dir = makeDir(id)
+        const dir = makeDir(id);
         const json = await getInfo(id);
 
         const { title, language, type, files } = json;
