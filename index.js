@@ -71,6 +71,14 @@ function url_from_url_from_hash(galleryid, image, dir, ext, base) {
     return url_from_url(url_from_hash(galleryid, image, dir, ext), base);
 }
 
+function image_url_from_image(galleryid, image, no_webp) {
+        var webp;
+        if (image['hash'] && image['haswebp'] && !no_webp) {
+                webp = 'webp';
+        }
+        return url_from_url_from_hash(galleryid, image, webp);
+}
+
 function makeDir(id) {
     "use strict"
     const dir = `./images/${id}`;
@@ -158,7 +166,7 @@ function imgDownload(nonexistent, files, id, dir) {
 
     return Promise.all(nonexistent.map(async file => {
         try {
-            let url = await url_from_url_from_hash(id, file)
+            let url = await image_url_from_image(id, file)
             let res = await imageRequest(url, id)
 
             fs.writeFile(`${dir}/${file["name"]}`, res.data, err => {
